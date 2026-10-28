@@ -54,7 +54,8 @@ export class App {
     const last = await store.getSetting<string>("open");
     const pic = last ? await store.getPicture(last) : undefined;
     this.waiting = (await store.listQueue()).length;
-    addEventListener("resize", () => this.view.resize());
+    // Re-size whenever the canvas box changes (the top bar wrapping, the strip filling), not only on window resize; else pen and pixel drift apart.
+    new ResizeObserver(() => this.view.resize()).observe(this.canvas);
     addEventListener("online", () => void this.sync());
     // Failed uploads are retried every minute while pictures wait, and when the app comes back to the front.
     setInterval(() => this.waiting && !this.keyBad && navigator.onLine && void this.sync(), 60_000);
@@ -62,6 +63,7 @@ export class App {
     this.input();
     this.view.resize();
     if (pic) this.open(pic);
+    else this.view.fit();
 
     this.renderTop();
     this.renderStrip();
