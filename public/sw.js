@@ -1,5 +1,5 @@
 // Offline: keeps every file of the app once loaded. GitHub calls are never cached.
-const CACHE = "draw-v1";
+const CACHE = "draw-v2";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "./index.html"])).then(() => self.skipWaiting()));
@@ -14,7 +14,8 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
   if (e.request.mode === "navigate") {
-    e.respondWith(fetch(e.request).then((r) => {
+    // no-cache: always ask GitHub whether the page changed (it lets browsers keep it 10 minutes otherwise).
+    e.respondWith(fetch(e.request, { cache: "no-cache" }).then((r) => {
       // Only a real page replaces the saved one (not a 404 or a Wi-Fi login page).
       if (!r.ok || r.redirected) return caches.match("./index.html").then((hit) => hit ?? r);
       const copy = r.clone();
