@@ -1,7 +1,7 @@
 // Sends waiting pictures to the art repo. Runs on start, after each Save and when the tablet comes back online.
 import { isCategories } from "./categories";
 import { fetchCategories, putFile } from "./github";
-import { safeName } from "./picture";
+import { picturePath } from "./picture";
 import { encodePng } from "./png";
 import * as store from "./store";
 
@@ -19,7 +19,7 @@ export async function runQueue(key: string): Promise<QueueResult> {
     let r: "ok" | "auth" | "retry" = "retry";
     try {
       const png = await encodePng(p.w, p.h, p.px);
-      r = await putFile(key, `items/${safeName(p.category)}/${safeName(p.name)}.png`, png, `art: ${safeName(p.category)}/${p.name}`);
+      r = await putFile(key, picturePath(p), png, `art: ${picturePath(p).slice(6, -4)}`);
     } catch {
       r = "retry";
     }

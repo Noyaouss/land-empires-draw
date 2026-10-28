@@ -39,3 +39,9 @@ input[type="checkbox"] { width: 24px; height: 24px; vertical-align: middle; }
 .badge.waiting { background: #b8862b; }
 #toast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: #000c; padding: 10px 16px; border-radius: 10px; max-width: 90vw; }
 ol { padding-left: 22px; line-height: 1.5; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+.tile { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px; height: auto; text-align: left; }
+.tile strong { font-size: 18px; }
+.tile span { font-size: 13px; opacity: 0.8; }
+.mini { display: flex; gap: 4px; min-height: 40px; }
+.mini .art { width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }

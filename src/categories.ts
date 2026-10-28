@@ -1,5 +1,5 @@
 // Categories and canvas sizes. The real list is categories.json in the art repo; this starter copy is used until it loads.
-export type Size = { name: string; w: number; h: number };
+export type Size = { name: string; w: number; h: number; sheet?: boolean };
 export type Category = { id: string; name: string; sizes: Size[] };
 export type Categories = { categories: Category[] };
 
@@ -15,4 +15,11 @@ export function isCategories(v: unknown): v is Categories {
   const c = (v as Categories)?.categories;
   return Array.isArray(c) && c.every((x) => typeof x?.id === "string" && typeof x.name === "string" && Array.isArray(x.sizes)
     && x.sizes.every((s) => typeof s?.name === "string" && Number.isInteger(s.w) && Number.isInteger(s.h) && s.w > 0 && s.h > 0 && s.w <= 256 && s.h <= 256));
+}
+
+// Every category also offers a sheet: one big canvas for several items, kept apart by see-through gaps and cut apart later.
+export function withSheet(c: Category): Size[] {
+  const w = Math.min(128, 2 * Math.max(...c.sizes.map((s) => s.w), 16));
+  const h = Math.min(128, 2 * Math.max(...c.sizes.map((s) => s.h), 16));
+  return [...c.sizes, { name: "sheet", w, h, sheet: true }];
 }

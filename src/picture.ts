@@ -1,5 +1,7 @@
 // One item picture. Colours are packed 0xRRGGBBAA; 0 is see-through.
-export type Picture = { id: string; name: string; category: string; w: number; h: number; px: Uint32Array; sent: boolean; updated: number };
+export type Picture = {
+  id: string; name: string; category: string; w: number; h: number; px: Uint32Array; sent: boolean; updated: number; sheet?: boolean;
+};
 
 export function newPicture(category: string, name: string, w: number, h: number): Picture {
   return { id: crypto.randomUUID(), name, category, w, h, px: new Uint32Array(w * h), sent: false, updated: Date.now() };
@@ -59,4 +61,9 @@ export function fill(p: Picture, x: number, y: number, c: number): void {
 export function safeName(s: string): string {
   const out = s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return out || "untitled";
+}
+
+// Where the picture goes in the art repo. Sheets (several items on one canvas) go to a sheets folder so the game knows to cut them apart.
+export function picturePath(p: Picture): string {
+  return `items/${safeName(p.category)}/${p.sheet ? "sheets/" : ""}${safeName(p.name)}.png`;
 }

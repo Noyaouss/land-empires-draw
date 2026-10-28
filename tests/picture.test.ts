@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fill, line, newPicture, pick, safeName, setPx } from "../src/picture";
+import { fill, line, newPicture, pick, picturePath, safeName, setPx } from "../src/picture";
 
 const RED = 0xff0000ff;
 const BLUE = 0x0000ffff;
@@ -70,5 +70,12 @@ describe("newPicture", () => {
     expect(p.px).toHaveLength(256);
     expect(p.sent).toBe(false);
     expect(p.id).toBeTruthy();
+  });
+});
+
+describe("picturePath", () => {
+  it("puts single items in their category and sheets in a sheets folder", () => {
+    expect(picturePath(newPicture("trees", "Big Oak", 32, 48))).toBe("items/trees/big-oak.png");
+    expect(picturePath({ ...newPicture("trees", "Crowns 1", 96, 128), sheet: true })).toBe("items/trees/sheets/crowns-1.png");
   });
 });

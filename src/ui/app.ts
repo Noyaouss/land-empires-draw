@@ -1,9 +1,9 @@
 // The drawing app: layout B (top bar, big canvas, palette strip with a pop-up colour wheel) and its panels.
-import type { Categories } from "../categories";
+import { type Categories, withSheet } from "../categories";
 import { hexToHsv, hexToPx, pxToHex } from "../colour";
 import { GAME_COLOURS } from "../gameColours";
 import { History } from "../history";
-import { fill, line, newPicture, pick, type Picture, safeName } from "../picture";
+import { fill, line, newPicture, pick, type Picture, picturePath } from "../picture";
 import * as store from "../store";
 import type { Style } from "../store";
 import { refreshCategories, runQueue, Syncer } from "../sync";
@@ -62,10 +62,11 @@ export class App {
     this.input();
     this.view.resize();
     if (pic) this.open(pic);
-    else this.newPanel();
+
     this.renderTop();
     this.renderStrip();
     if (!this.key) this.settingsPanel();
+    else void this.homePanel();
     void this.sync();
   }
 
@@ -274,7 +275,7 @@ export class App {
       shadow, el("span", { class: "sun", title: "Light comes from the upper left; shadows fall to the lower right" }, "☀ ↖"),
       el("span", { class: "name" }, `${this.pic.name} · ${this.pic.w}×${this.pic.h}`),
       el("span", { class: this.keyBad ? "status bad" : "status" }, status),
-      styleSel, btn("Save", () => void this.save(), "save"), btn("☰", () => this.menuPanel()),
+      styleSel, btn("Save", () => void this.save(), "save"), btn("⌂ Home", () => void this.homePanel()),
     );
   }
 
@@ -324,78 +325,72 @@ export class App {
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.add("hidden"), 3500);
   }
 
-  private menuPanel(): void {
-    const item = (label: string, f: () => void) => {
-      const b = el("button", { class: "wide" }, label);
+  // Home: one tile per category (count and a few thumbnails), plus Styles and Settings. Opens on start and from the ⌂ button.
+  private async homePanel(): Promise<void> {
+    const pics = await store.listPictures();
+    const tiles = el("div", { class: "tiles" });
+    for (const c of this.categories.categories) {
+      const mine = pics.filter((p) => p.category === c.id).sort((a, b) => b.updated - a.updated);
+      const t = el("button", { class: "tile" }, el("strong", {}, c.name), el("span", {}, `${mine.length} picture${mine.length === 1 ? "" : "s"}`),
+        el("div", { class: "mini" }, ...mine.slice(0, 3).map(thumb)));
+      t.onclick = () => void this.categoryPanel(c.id);
+      tiles.append(t);
+    }
+    const btn = (label: string, f: () => void) => {
+      const b = el("button", {}, label);
       b.onclick = f;
       return b;
     };
-    this.show("Menu",
-      item("My pictures", () => void this.picturesPanel()),
-      item("New picture", () => this.newPanel()),
-      item("Styles", () => this.stylesPanel()),
-      item("Settings", () => this.settingsPanel()));
+    const status = this.keyBad ? "GitHub key not working" : this.waiting ? `${this.waiting} picture(s) waiting to send` : "All pictures sent";
+    this.show("Land Empires Draw", el("p", { class: this.keyBad ? "status bad" : "status" }, status), tiles,
+      el("div", { class: "choices" }, btn("🎨 Styles", () => this.stylesPanel()), btn("⚙ Settings", () => this.settingsPanel())));
   }
 
-  private async picturesPanel(): Promise<void> {
-    const pics = (await store.listPictures()).sort((a, b) => b.updated - a.updated);
-    const queue = new Set(await store.listQueue());
-    const body: Node[] = [];
-    for (const cat of new Set(pics.map((p) => p.category))) {
-      const grid = el("div", { class: "thumbs" });
-      for (const p of pics.filter((x) => x.category === cat)) {
-        const badge = p.sent ? "Sent" : queue.has(p.id) ? "Waiting" : "Not saved";
-        const t = el("button", { class: "thumb" }, thumb(p), el("span", {}, p.name), el("span", { class: `badge ${badge.toLowerCase().replace(" ", "-")}` }, badge));
-        t.onclick = () => {
-          this.open(p);
-          this.hide();
-        };
-        grid.append(t);
-      }
-      body.push(el("h3", {}, this.categories.categories.find((c) => c.id === cat)?.name ?? cat), grid);
-    }
-    this.show("My pictures", ...(body.length ? body : [el("p", {}, "No pictures yet.")]));
-  }
-
-  private newPanel(): void {
-    let cat = this.categories.categories[0];
-    let size = cat?.sizes[0];
-    const name = el("input", { type: "text", placeholder: "Name, for example Big oak" });
-    const cats = el("div", { class: "choices" });
-    const sizes = el("div", { class: "choices" });
-    const draw = () => {
-      cats.replaceChildren(...this.categories.categories.map((c) => {
-        const b = el("button", { class: c === cat ? "on" : "" }, c.name);
-        b.onclick = () => {
-          cat = c;
-          size = c.sizes[0];
-          draw();
-        };
-        return b;
-      }));
-      sizes.replaceChildren(...(cat?.sizes ?? []).map((s) => {
-        const b = el("button", { class: s === size ? "on" : "" }, `${s.name} ${s.w}×${s.h}`);
-        b.onclick = () => {
-          size = s;
-          draw();
-        };
-        return b;
-      }));
-    };
-    draw();
+  // One category: new picture (its sizes, plus a sheet for several items) and its pictures.
+  private async categoryPanel(id: string): Promise<void> {
+    const cat = this.categories.categories.find((c) => c.id === id);
+    if (!cat) return this.homePanel();
+    const sizes = withSheet(cat);
+    let size = sizes[0];
+    const name = el("input", { type: "text", placeholder: "Name, for example Big oak" }) as HTMLInputElement;
+    const choices = el("div", { class: "choices" });
+    const drawSizes = () => choices.replaceChildren(...sizes.map((z) => {
+      const b = el("button", { class: z === size ? "on" : "" }, z.sheet ? `Sheet ${z.w}×${z.h} (several items)` : `${z.name} ${z.w}×${z.h}`);
+      b.onclick = () => {
+        size = z;
+        drawSizes();
+      };
+      return b;
+    }));
+    drawSizes();
     const create = el("button", { class: "save wide" }, "Create");
     create.onclick = async () => {
-      if (!cat || !size) return;
       const n = name.value.trim() || "untitled";
-      const same = (await store.listPictures()).find((p) => p.category === cat!.id && safeName(p.name) === safeName(n));
-      if (same && !confirm(`A picture called "${same.name}" already exists in ${cat.name}. Replace it with a new blank one?`)) return;
-      const p = newPicture(cat.id, n, size.w, size.h);
+      const p = { ...newPicture(cat.id, n, size.w, size.h), sheet: !!size.sheet };
+      const same = (await store.listPictures()).find((q) => picturePath(q) === picturePath(p));
+      if (same && !confirm(`A picture called "${same.name}" already exists here. Replace it with a new blank one?`)) return;
       if (same) p.id = same.id;
       await store.savePicture(p);
       this.open(p);
       this.hide();
     };
-    this.show("New picture", el("h3", {}, "Category"), cats, el("h3", {}, "Size"), sizes, el("h3", {}, "Name"), name, create);
+    const pics = (await store.listPictures()).filter((p) => p.category === cat.id).sort((a, b) => b.updated - a.updated);
+    const queue = new Set(await store.listQueue());
+    const grid = el("div", { class: "thumbs" });
+    for (const p of pics) {
+      const badge = p.sent ? "Sent" : queue.has(p.id) ? "Waiting" : "Not saved";
+      const t = el("button", { class: "thumb" }, thumb(p), el("span", {}, p.sheet ? `${p.name} (sheet)` : p.name),
+        el("span", { class: `badge ${badge.toLowerCase().replace(" ", "-")}` }, badge));
+      t.onclick = () => {
+        this.open(p);
+        this.hide();
+      };
+      grid.append(t);
+    }
+    const back = el("button", {}, "← Home");
+    back.onclick = () => void this.homePanel();
+    this.show(cat.name, back, el("h3", {}, "New picture"), choices, name, create,
+      el("h3", {}, "Pictures"), pics.length ? grid : el("p", {}, "No pictures yet."));
   }
 
   private wheelPanel(): void {
