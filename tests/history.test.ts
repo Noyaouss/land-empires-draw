@@ -4,7 +4,7 @@ import { History } from "../src/history";
 describe("History", () => {
   it("undoes at least 100 strokes", () => {
     const h = new History();
-    let cur = new Uint32Array(4);
+    let cur: Uint32Array = new Uint32Array(4);
     for (let i = 1; i <= 150; i++) {
       h.push(cur);
       cur = cur.slice();

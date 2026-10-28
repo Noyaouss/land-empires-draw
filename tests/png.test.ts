@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { encodePng } from "../src/png";
 
 async function inflate(b: Uint8Array): Promise<Uint8Array> {
-  const s = new Blob([b]).stream().pipeThrough(new DecompressionStream("deflate"));
+  const s = new Blob([b as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate"));
   return new Uint8Array(await new Response(s).arrayBuffer());
 }
 
