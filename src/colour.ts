@@ -15,3 +15,14 @@ export function hsvToHex(h: number, s: number, v: number): string {
   };
   return `#${[f(5), f(3), f(1)].map((c) => c.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
 }
+
+// "#RRGGBB" to hue (degrees), saturation and value (0 to 1), so the colour wheel can open on the current colour.
+export function hexToHsv(hex: string): { h: number; s: number; v: number } {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const v = Math.max(r, g, b);
+  const d = v - Math.min(r, g, b);
+  const s = v === 0 ? 0 : d / v;
+  if (d === 0) return { h: 0, s, v };
+  const h = v === r ? ((g - b) / d + 6) % 6 : v === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: h * 60, s, v };
+}

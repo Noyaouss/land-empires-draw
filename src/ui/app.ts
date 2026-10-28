@@ -1,6 +1,6 @@
 // The drawing app: layout B (top bar, big canvas, palette strip with a pop-up colour wheel) and its panels.
 import type { Categories } from "../categories";
-import { hexToPx, pxToHex } from "../colour";
+import { hexToHsv, hexToPx, pxToHex } from "../colour";
 import { GAME_COLOURS } from "../gameColours";
 import { History } from "../history";
 import { fill, line, newPicture, pick, type Picture, safeName } from "../picture";
@@ -34,7 +34,6 @@ export class App {
   private waiting = 0;
   private keyBad = false;
   private view!: View;
-  private wheel!: Wheel;
   private top = el("div", { id: "top" });
   private strip = el("div", { id: "strip" });
   private panel = el("div", { id: "panel", class: "hidden" });
@@ -44,7 +43,6 @@ export class App {
   async start(root: HTMLElement): Promise<void> {
     root.append(this.top, this.canvas, this.strip, this.panel, this.toastEl);
     this.view = new View(this.canvas, this.pic);
-    this.wheel = new Wheel((hex) => this.setColour(hex));
     void store.askPersist();
     this.key = (await store.getSetting<string>("key")) ?? "";
     this.pen = (await store.getSetting<PenState>("pen")) ?? this.pen;
@@ -401,17 +399,16 @@ export class App {
   }
 
   private wheelPanel(): void {
-    const preview = el("div", { class: "current big", style: `background:${this.wheel.hex}` });
-    const hex = el("span", {}, this.wheel.hex);
+    const preview = el("div", { class: "current big", style: `background:${this.colour}` });
+    const hex = el("span", {}, this.colour);
     const w = new Wheel((h) => {
       preview.style.background = h;
       hex.textContent = h;
     });
-    Object.assign(w, { h: this.wheel.h, s: this.wheel.s, v: this.wheel.v });
+    Object.assign(w, hexToHsv(this.colour)); // open on the colour in use
     w.draw();
     const use = el("button", { class: "wide" }, "Use this colour");
     use.onclick = () => {
-      Object.assign(this.wheel, { h: w.h, s: w.s, v: w.v });
       this.setColour(w.hex);
       this.hide();
     };
@@ -424,7 +421,6 @@ export class App {
       const mine = this.style.groups.find((g) => g.name === "Mine") ?? this.style.groups[this.style.groups.push({ name: "Mine", colours: [] }) - 1];
       if (!mine.colours.includes(w.hex)) mine.colours.push(w.hex);
       await store.saveStyle(this.style);
-      Object.assign(this.wheel, { h: w.h, s: w.s, v: w.v });
       this.setColour(w.hex);
       this.hide();
     };
