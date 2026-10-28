@@ -6,8 +6,8 @@ import { History } from "../history";
 import { fill, line, newPicture, pick, type Picture, safeName } from "../picture";
 import * as store from "../store";
 import type { Style } from "../store";
-import { refreshCategories, runQueue } from "../sync";
-import { type PenState, penOnlyDecision } from "./input";
+import { refreshCategories, runQueue, Syncer } from "../sync";
+import { type PenState, penOnlyDecision, pointerRole, type Role } from "./input";
 import { View } from "./view";
 import { Wheel } from "./wheel";
 
@@ -58,6 +58,9 @@ export class App {
     this.waiting = (await store.listQueue()).length;
     addEventListener("resize", () => this.view.resize());
     addEventListener("online", () => void this.sync());
+    // Failed uploads are retried every minute while pictures wait, and when the app comes back to the front.
+    setInterval(() => this.waiting && !this.keyBad && navigator.onLine && void this.sync(), 60_000);
+    document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && void this.sync());
     this.input();
     this.view.resize();
     if (pic) this.open(pic);
@@ -79,38 +82,41 @@ export class App {
   }
 
   private input(): void {
-    const pointers = new Map<number, PointerEvent>();
+    // Pointers in use and what each one does; ignored pointers (a palm under the pen, a third finger) are not kept.
+    const pointers = new Map<number, { e: PointerEvent; role: Role }>();
     let stroke: { before: Uint32Array; last: [number, number]; id: number } | null = null;
     let gesture: { dist: number; zoom: number; mx: number; my: number; ox: number; oy: number } | null = null;
     let pan: { x: number; y: number; ox: number; oy: number; id: number } | null = null;
     const c = this.canvas;
+    const fingers = () => [...pointers.values()].filter((p) => p.e.pointerType === "touch").map((p) => p.e);
     const mid = () => {
-      const [a, b] = [...pointers.values()];
+      const [a, b] = fingers();
       return { dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), mx: (a.clientX + b.clientX) / 2, my: (a.clientY + b.clientY) / 2 };
     };
     c.addEventListener("pointerdown", (e) => {
-      c.setPointerCapture(e.pointerId);
-      pointers.set(e.pointerId, e);
-      if (pointers.size === 2) {
-        // A second finger means zoom and pan: cancel the stroke the first finger started.
-        if (stroke) {
-          this.pic.px.set(stroke.before);
-          stroke = null;
-        }
-        pan = null;
-        const m = mid();
-        gesture = { ...m, zoom: this.view.zoom, ox: this.view.ox, oy: this.view.oy };
-        this.view.draw();
-        return;
-      }
-      if (pointers.size > 2) return;
       const d = penOnlyDecision(this.pen, e.pointerType);
       if (d.state !== this.pen) {
         this.pen = d.state;
         void store.setSetting("pen", this.pen);
         this.toast("Pen found: only the pen draws now (change it in Settings)");
       }
-      if (!d.draw) {
+      const active = { pen: [...pointers.values()].some((p) => p.e.pointerType === "pen"), touches: fingers().length };
+      const role = pointerRole(this.pen, e.pointerType, active);
+      if (role === "ignore") return;
+      c.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, { e, role });
+      if (role === "pinch") {
+        // A second finger means zoom and pan: cancel the stroke the first finger started.
+        if (stroke) {
+          this.pic.px.set(stroke.before);
+          stroke = null;
+        }
+        pan = null;
+        gesture = { ...mid(), zoom: this.view.zoom, ox: this.view.ox, oy: this.view.oy };
+        this.view.draw();
+        return;
+      }
+      if (role === "pan") {
         pan = { x: e.clientX, y: e.clientY, ox: this.view.ox, oy: this.view.oy, id: e.pointerId };
         return;
       }
@@ -131,9 +137,11 @@ export class App {
       this.view.draw();
     });
     c.addEventListener("pointermove", (e) => {
-      if (!pointers.has(e.pointerId)) return;
-      pointers.set(e.pointerId, e);
-      if (gesture && pointers.size === 2) {
+      const p = pointers.get(e.pointerId);
+      if (!p) return;
+      p.e = e;
+      if (gesture && p.e.pointerType === "touch") {
+        if (fingers().length < 2) return;
         const m = mid();
         this.view.ox = gesture.ox + m.mx - gesture.mx;
         this.view.oy = gesture.oy + m.my - gesture.my;
@@ -157,8 +165,8 @@ export class App {
       this.view.draw();
     });
     const up = (e: PointerEvent) => {
-      pointers.delete(e.pointerId);
-      if (pointers.size < 2) gesture = null;
+      if (!pointers.delete(e.pointerId)) return;
+      if (fingers().length < 2) gesture = null;
       if (pan?.id === e.pointerId) pan = null;
       if (stroke && stroke.id === e.pointerId) {
         this.endStroke(stroke.before);
@@ -217,11 +225,13 @@ export class App {
     await this.sync();
   }
 
-  private syncing = false;
+  private syncer = new Syncer(() => this.syncOnce());
 
-  private async sync(): Promise<void> {
-    if (!this.key || this.syncing) return;
-    this.syncing = true;
+  private sync(): Promise<void> {
+    return this.key ? this.syncer.request() : Promise.resolve();
+  }
+
+  private async syncOnce(): Promise<void> {
     try {
       if (await refreshCategories(this.key)) this.categories = await store.getCategories();
       const r = await runQueue(this.key);
@@ -232,7 +242,6 @@ export class App {
       const fresh = await store.getPicture(this.pic.id);
       if (fresh && fresh.updated === this.pic.updated) this.pic.sent = fresh.sent;
     } finally {
-      this.syncing = false;
       this.renderTop();
     }
   }

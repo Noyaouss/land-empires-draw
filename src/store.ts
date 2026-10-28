@@ -37,6 +37,15 @@ export async function savePicture(p: Picture): Promise<void> {
   await done((await os("pictures", "readwrite")).put(p));
 }
 
+// Marks a picture sent only if it is still the version that was uploaded, in one transaction, so a stroke saved meanwhile is never overwritten.
+export async function markSent(id: string, updated: number): Promise<boolean> {
+  const s = await os("pictures", "readwrite");
+  const p = (await done(s.get(id))) as Picture | undefined;
+  if (!p || p.updated !== updated) return false;
+  await done(s.put({ ...p, sent: true }));
+  return true;
+}
+
 export async function getPicture(id: string): Promise<Picture | undefined> {
   return done((await os("pictures")).get(id));
 }

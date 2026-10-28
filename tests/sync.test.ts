@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newPicture } from "../src/picture";
 import * as store from "../src/store";
-import { refreshCategories, runQueue } from "../src/sync";
+import { refreshCategories, runQueue, Syncer } from "../src/sync";
 
 const KEY = "github_pat_SECRET123";
 
@@ -94,5 +94,42 @@ describe("refreshCategories", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ content: btoa("{\"nope\":1}") }))));
     await refreshCategories(KEY);
     expect((await store.getCategories()).categories[0].id).toBe("x");
+  });
+});
+
+describe("Syncer", () => {
+  it("runs once more when asked during a run, never two at once", async () => {
+    let running = 0;
+    let max = 0;
+    let runs = 0;
+    const s = new Syncer(async () => {
+      running++;
+      max = Math.max(max, running);
+      runs++;
+      await new Promise((r) => setTimeout(r, 5));
+      running--;
+    });
+    const a = s.request();
+    void s.request();
+    void s.request();
+    await a;
+    await s.idle();
+    expect(runs).toBe(2);
+    expect(max).toBe(1);
+  });
+});
+
+describe("markSent", () => {
+  it("only marks the version that was sent, and keeps newer pixels", async () => {
+    const p = newPicture("trees", "a", 2, 2);
+    await store.savePicture(p);
+    const newer = { ...p, px: new Uint32Array([1, 2, 3, 4]), updated: p.updated + 1 };
+    await store.savePicture(newer);
+    expect(await store.markSent(p.id, p.updated)).toBe(false);
+    const back = (await store.getPicture(p.id))!;
+    expect(back.sent).toBe(false);
+    expect([...back.px]).toEqual([1, 2, 3, 4]);
+    expect(await store.markSent(p.id, newer.updated)).toBe(true);
+    expect((await store.getPicture(p.id))!.sent).toBe(true);
   });
 });

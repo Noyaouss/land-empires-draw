@@ -28,10 +28,8 @@ export async function runQueue(key: string): Promise<QueueResult> {
       break;
     }
     if (r === "retry") continue;
-    const now = await store.getPicture(id);
     // Saved again while it was uploading: keep it waiting so the newer version goes too.
-    if (!now || now.updated !== p.updated) continue;
-    await store.savePicture({ ...now, sent: true });
+    if (!(await store.markSent(id, p.updated))) continue;
     await store.dequeue(id);
     sent++;
   }
@@ -43,4 +41,34 @@ export async function refreshCategories(key: string): Promise<boolean> {
   if (!isCategories(c)) return false;
   await store.cacheCategories(c);
   return true;
+}
+
+// One sync at a time; a request during a run makes it run once more afterwards, so nothing waits for the next trigger.
+export class Syncer {
+  private running: Promise<void> | null = null;
+  private again = false;
+
+  constructor(private run: () => Promise<void>) {}
+
+  request(): Promise<void> {
+    if (this.running) {
+      this.again = true;
+      return this.running;
+    }
+    this.running = (async () => {
+      try {
+        do {
+          this.again = false;
+          await this.run();
+        } while (this.again);
+      } finally {
+        this.running = null;
+      }
+    })();
+    return this.running;
+  }
+
+  idle(): Promise<void> {
+    return this.running ?? Promise.resolve();
+  }
 }

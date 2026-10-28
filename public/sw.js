@@ -15,6 +15,8 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
   if (e.request.mode === "navigate") {
     e.respondWith(fetch(e.request).then((r) => {
+      // Only a real page replaces the saved one (not a 404 or a Wi-Fi login page).
+      if (!r.ok || r.redirected) return caches.match("./index.html").then((hit) => hit ?? r);
       const copy = r.clone();
       caches.open(CACHE).then((c) => c.put("./index.html", copy));
       return r;
