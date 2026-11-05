@@ -41,3 +41,20 @@ export async function fetchCategories(key: string): Promise<unknown | "auth" | "
     return "retry";
   }
 }
+
+export type GetResult = Uint8Array | "auth" | "limit" | "offline" | "missing" | "retry";
+
+// Downloads one file from the art repo (contents API, base64).
+export async function getFile(key: string, path: string): Promise<GetResult> {
+  try {
+    const r = await fetch(`${url(path)}?ref=main`, { headers: headers(key) });
+    if (r.status === 429 || (r.status === 403 && r.headers.get("x-ratelimit-remaining") === "0")) return "limit";
+    if (r.status === 401 || r.status === 403) return "auth";
+    if (r.status === 404) return "missing";
+    if (!r.ok) return "retry";
+    const { content } = (await r.json()) as { content: string };
+    return Uint8Array.from(atob(content.replace(/\s/g, "")), (c) => c.charCodeAt(0));
+  } catch {
+    return navigator.onLine ? "retry" : "offline";
+  }
+}

@@ -45,3 +45,12 @@ ol { padding-left: 22px; line-height: 1.5; }
 .tile span { font-size: 13px; opacity: 0.8; }
 .mini { display: flex; gap: 4px; min-height: 40px; }
 .mini .art { width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }
+
+/* Game library */
+.tile.lib { background: #2f5d3a; min-height: 96px; }
+.big, .chip, .thumbs.lib .thumb { min-height: 48px; }
+input.big { width: 100%; box-sizing: border-box; margin: 8px 0; font-size: 16px; padding: 8px; }
+.chip.on { background: var(--save); }
+.thumbs.lib { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+.art.lib { width: 96px; height: 96px; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient(#5a7a4a 0 25%, #6b8c59 0 50%) 0 0 / 12px 12px; }
+.small { font-size: 12px; opacity: 0.7; }

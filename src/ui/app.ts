@@ -4,6 +4,7 @@ import { hexToHsv, hexToPx, pxToHex } from "../colour";
 import { GAME_COLOURS } from "../gameColours";
 import { History } from "../history";
 import { fill, line, newPicture, pick, type Picture, picturePath } from "../picture";
+import { cachedThumb, countByCategory, ERROR_TEXT, fetchThumb, findLocal, groupItems, itemOf, type LibError, type LibIndex, type LibItem, LIB_CATEGORIES, loadIndex, toPicture, type Thumb } from "../library";
 import * as store from "../store";
 import type { Style } from "../store";
 import { refreshCategories, runQueue, Syncer } from "../sync";
@@ -30,6 +31,10 @@ export class App {
   private style: Style = GAME_STYLE;
   private categories: Categories = { categories: [] };
   private key = "";
+  private libIndex: LibIndex | null = null;
+  private libCat = "trees";
+  private libSearch = "";
+  private libRun = 0;
   private pen: PenState = { penOnly: false, penSeen: false };
   private waiting = 0;
   private keyBad = false;
@@ -54,6 +59,7 @@ export class App {
     const last = await store.getSetting<string>("open");
     const pic = last ? await store.getPicture(last) : undefined;
     this.waiting = (await store.listQueue()).length;
+    this.libIndex = (await store.getSetting<LibIndex>("lib:index")) ?? null;
     // Re-size whenever the canvas box changes (the top bar wrapping, the strip filling), not only on window resize; else pen and pixel drift apart.
     new ResizeObserver(() => this.view.resize()).observe(this.canvas);
     addEventListener("online", () => void this.sync());
@@ -277,6 +283,7 @@ export class App {
       shadow, el("span", { class: "sun", title: "Light comes from the upper left; shadows fall to the lower right" }, "☀ ↖"),
       el("span", { class: "name" }, `${this.pic.name} · ${this.pic.w}×${this.pic.h}`),
       el("span", { class: this.keyBad ? "status bad" : "status" }, status),
+      ...(itemOf(this.libIndex, this.pic) ? [btn("Revert to game version", () => void this.revert())] : []),
       styleSel, btn("Save", () => void this.save(), "save"), btn("⌂ Home", () => void this.homePanel()),
     );
   }
@@ -338,6 +345,9 @@ export class App {
       t.onclick = () => void this.categoryPanel(c.id);
       tiles.append(t);
     }
+    const lib = el("button", { class: "tile lib" }, el("strong", {}, "Game library"), el("span", {}, "Edit the game's own trees, rocks and plants"));
+    lib.onclick = () => void this.libraryPanel();
+    tiles.prepend(lib);
     const btn = (label: string, f: () => void) => {
       const b = el("button", {}, label);
       b.onclick = f;
@@ -393,6 +403,133 @@ export class App {
     back.onclick = () => void this.homePanel();
     this.show(cat.name, back, el("h3", {}, "New picture"), choices, name, create,
       el("h3", {}, "Pictures"), pics.length ? grid : el("p", {}, "No pictures yet."));
+  }
+
+  // Game library: the game's own pictures from the art repo, loaded on demand and cached on the tablet.
+  private async libraryPanel(): Promise<void> {
+    const run = ++this.libRun; // a newer screen stops the older loading loop
+    const back = el("button", { class: "big" }, "← Home");
+    back.onclick = () => {
+      this.libRun++;
+      void this.homePanel();
+    };
+    const info = el("p", { class: "status" }, "Loading the list...");
+    const body = el("div", {});
+    this.show("Game library", back, info, body);
+    const r = await loadIndex(this.key);
+    if (run !== this.libRun) return;
+    if (typeof r === "string") return this.libError(info, r);
+    this.libIndex = r.index;
+    info.textContent = r.cached && this.key ? "Showing the saved list (could not refresh)." : "";
+    const chips = el("div", { class: "choices" });
+    const search = el("input", { type: "search", placeholder: "Search, for example oak", value: this.libSearch, class: "big" }) as HTMLInputElement;
+    const grid = el("div", {});
+    body.append(chips, search, grid);
+    const index = r.index;
+    const draw = async () => {
+      const mine = await store.listPictures();
+      chips.replaceChildren(...LIB_CATEGORIES.map(([id, name]) => {
+        const b = el("button", { class: id === this.libCat ? "chip on" : "chip" }, `${name} (${countByCategory(index.items, id)})`);
+        b.onclick = () => {
+          this.libCat = id;
+          void draw();
+        };
+        return b;
+      }));
+      const thumbs: [LibItem, HTMLCanvasElement][] = [];
+      const kids: Node[] = [];
+      const groups = groupItems(index.items, this.libCat, this.libSearch);
+      for (const [g, items] of groups) {
+        const row = el("div", { class: "thumbs lib" });
+        for (const i of items) {
+          const art = el("canvas", { class: "art lib" });
+          thumbs.push([i, art]);
+          const t = el("button", { class: "thumb" }, art, el("span", {}, i.label), el("span", { class: "small" }, `${i.w}×${i.h}`),
+            ...(findLocal(mine, i) ? [el("span", { class: "badge sent" }, "edited")] : []));
+          t.onclick = () => void this.openLibraryItem(i, art);
+          row.append(t);
+        }
+        kids.push(el("h3", {}, g), row);
+      }
+      grid.replaceChildren(...(kids.length ? kids : [el("p", {}, "Nothing found.")]));
+      void this.loadThumbs(run, thumbs, info);
+    };
+    search.oninput = () => {
+      this.libSearch = search.value;
+      void draw();
+    };
+    await draw();
+  }
+
+  private libError(info: HTMLElement, e: LibError, retry = () => void this.libraryPanel()): void {
+    const b = el("button", { class: "big" }, "Retry");
+    b.onclick = retry;
+    info.replaceChildren(ERROR_TEXT[e], " ", b);
+  }
+
+  // Draws cached thumbnails at once, then downloads the missing ones, 6 at a time.
+  private async loadThumbs(run: number, items: [LibItem, HTMLCanvasElement][], info: HTMLElement): Promise<void> {
+    const todo: [LibItem, HTMLCanvasElement][] = [];
+    for (const [i, c] of items) {
+      const t = await cachedThumb(i);
+      if (t) paint(c, t);
+      else todo.push([i, c]);
+    }
+    if (!todo.length || run !== this.libRun) return;
+    let done = 0;
+    let failed: LibError | null = null;
+    const total = todo.length;
+    const next = async (): Promise<void> => {
+      while (todo.length && !failed && run === this.libRun && info.isConnected) {
+        const [i, c] = todo.shift()!;
+        const t = await fetchThumb(this.key, i);
+        if (typeof t === "string") failed = this.key ? t : "nokey";
+        else paint(c, t);
+        done++;
+        if (!failed && run === this.libRun) info.textContent = `Loading ${done} of ${total}`;
+      }
+    };
+    info.textContent = this.key ? `Loading 0 of ${total}` : "";
+    await Promise.all(Array.from({ length: 6 }, next));
+    if (run !== this.libRun) return;
+    if (failed) this.libError(info, failed);
+    else info.textContent = "";
+  }
+
+  private async openLibraryItem(i: LibItem, art: HTMLCanvasElement): Promise<void> {
+    const local = findLocal(await store.listPictures(), i);
+    if (local) {
+      this.open(local);
+      return this.hide();
+    }
+    let t: Thumb | undefined = await cachedThumb(i);
+    if (!t) {
+      if (!this.key) return this.toast(ERROR_TEXT.nokey);
+      this.toast("Downloading...");
+      const r = await fetchThumb(this.key, i);
+      if (typeof r === "string") return this.toast(ERROR_TEXT[r]);
+      t = r;
+    }
+    paint(art, t);
+    const p = toPicture(i, t);
+    await store.savePicture(p);
+    this.open(p);
+    this.hide();
+  }
+
+  private async revert(): Promise<void> {
+    const i = itemOf(this.libIndex, this.pic);
+    if (!i || !confirm(`Throw away your changes to "${this.pic.name}" and go back to the game version?`)) return;
+    if (!this.key) return this.toast(ERROR_TEXT.nokey);
+    const r = await fetchThumb(this.key, i);
+    if (typeof r === "string") return this.toast(ERROR_TEXT[r]);
+    this.pic.w = r.w;
+    this.pic.h = r.h;
+    this.pic.px = r.px.slice();
+    this.pic.updated = Date.now();
+    await store.savePicture(this.pic);
+    this.open(this.pic);
+    this.toast("Back to the game version. Tap Save to keep it.");
   }
 
   private wheelPanel(): void {
@@ -526,6 +663,15 @@ export class App {
       el("h3", {}, "Sending"), el("p", {}, `${this.waiting} picture(s) waiting.`), send,
       el("h3", {}, "How to make the key"), guide);
   }
+}
+
+function paint(c: HTMLCanvasElement, t: Thumb): void {
+  c.width = t.w;
+  c.height = t.h;
+  const img = new ImageData(t.w, t.h);
+  const dv = new DataView(img.data.buffer);
+  for (let i = 0; i < t.px.length; i++) dv.setUint32(i * 4, t.px[i]);
+  c.getContext("2d")!.putImageData(img, 0, 0);
 }
 
 function thumb(p: Picture): HTMLCanvasElement {

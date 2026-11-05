@@ -44,3 +44,66 @@ export async function encodePng(w: number, h: number, px: Uint32Array): Promise<
   }
   return out;
 }
+
+async function inflate(b: Uint8Array): Promise<Uint8Array> {
+  const s = new Blob([b as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate"));
+  return new Uint8Array(await new Response(s).arrayBuffer());
+}
+
+// Reads 8-bit grey, grey+alpha, RGB, RGBA or palette PNGs, not interlaced. Anything else throws.
+export async function decodePng(b: Uint8Array): Promise<{ w: number; h: number; px: Uint32Array }> {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  if (b.length < 33 || dv.getUint32(0) !== 0x89504e47) throw new Error("not a PNG");
+  let w = 0, h = 0, depth = 0, type = 0, interlace = 0;
+  let pal: Uint8Array = new Uint8Array(0);
+  let trns: Uint8Array = new Uint8Array(0);
+  const idat: Uint8Array[] = [];
+  for (let at = 8; at + 8 <= b.length;) {
+    const len = dv.getUint32(at);
+    const name = String.fromCharCode(...b.subarray(at + 4, at + 8));
+    const data = b.subarray(at + 8, at + 8 + len);
+    if (name === "IHDR") {
+      w = dv.getUint32(at + 8);
+      h = dv.getUint32(at + 12);
+      [depth, type, , , interlace] = data.subarray(8, 13);
+    } else if (name === "PLTE") pal = data;
+    else if (name === "tRNS") trns = data;
+    else if (name === "IDAT") idat.push(data);
+    at += 12 + len;
+  }
+  if (depth !== 8 || interlace !== 0 || ![0, 2, 3, 4, 6].includes(type) || !w || !h) throw new Error("unsupported PNG");
+  const bpp = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[type as 0 | 2 | 3 | 4 | 6];
+  const all = new Uint8Array(idat.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of idat) {
+    all.set(p, o);
+    o += p.length;
+  }
+  const raw = await inflate(all);
+  const stride = w * bpp;
+  if (raw.length < h * (stride + 1)) throw new Error("short PNG");
+  const rows = new Uint8Array(h * stride);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)];
+    for (let i = 0; i < stride; i++) {
+      const x = raw[y * (stride + 1) + 1 + i];
+      const a = i >= bpp ? rows[y * stride + i - bpp] : 0;
+      const up = y > 0 ? rows[(y - 1) * stride + i] : 0;
+      const c = y > 0 && i >= bpp ? rows[(y - 1) * stride + i - bpp] : 0;
+      const pa = Math.abs(up - c), pb = Math.abs(a - c), pc = Math.abs(a + up - 2 * c);
+      const paeth = pa <= pb && pa <= pc ? a : pb <= pc ? up : c;
+      rows[y * stride + i] = (x + [0, a, up, (a + up) >> 1, paeth][f]) & 255;
+    }
+  }
+  const px = new Uint32Array(w * h);
+  const pack = (r: number, g: number, bl: number, al: number) => ((r << 24) | (g << 16) | (bl << 8) | al) >>> 0;
+  for (let i = 0; i < w * h; i++) {
+    const s = i * bpp;
+    if (type === 6) px[i] = pack(rows[s], rows[s + 1], rows[s + 2], rows[s + 3]);
+    else if (type === 2) px[i] = pack(rows[s], rows[s + 1], rows[s + 2], 255);
+    else if (type === 0) px[i] = pack(rows[s], rows[s], rows[s], 255);
+    else if (type === 4) px[i] = pack(rows[s], rows[s], rows[s], rows[s + 1]);
+    else px[i] = pack(pal[rows[s] * 3], pal[rows[s] * 3 + 1], pal[rows[s] * 3 + 2], trns[rows[s]] ?? 255);
+  }
+  return { w, h, px };
+}
