@@ -345,7 +345,7 @@ export class App {
       t.onclick = () => void this.categoryPanel(c.id);
       tiles.append(t);
     }
-    const lib = el("button", { class: "tile lib" }, el("strong", {}, "Game library"), el("span", {}, "Edit the game's own trees, rocks and plants"));
+    const lib = el("button", { class: "tile lib" }, el("strong", {}, "Game library"), el("span", {}, "Edit the game's own trees, rocks, plants, people, animals and camp"));
     lib.onclick = () => void this.libraryPanel();
     tiles.prepend(lib);
     const btn = (label: string, f: () => void) => {
