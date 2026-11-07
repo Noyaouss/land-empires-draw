@@ -427,6 +427,7 @@ export class App {
     const grid = el("div", {});
     body.append(chips, search, grid);
     const index = r.index;
+    let shown: [LibItem, HTMLCanvasElement][] = [];
     const draw = async () => {
       const mine = await store.listPictures();
       chips.replaceChildren(...LIB_CATEGORIES.map(([id, name]) => {
@@ -453,6 +454,7 @@ export class App {
         kids.push(el("h3", {}, g), row);
       }
       grid.replaceChildren(...(kids.length ? kids : [el("p", {}, "Nothing found.")]));
+      shown = thumbs;
       void this.loadThumbs(run, thumbs, info);
     };
     search.oninput = () => {
@@ -460,6 +462,11 @@ export class App {
       void draw();
     };
     await draw();
+    // Pictures pushed to the art repo while the library stays open: re-check the shas every 30 s.
+    const poll = setInterval(() => {
+      if (run !== this.libRun) clearInterval(poll);
+      else if (document.visibilityState === "visible") void this.loadThumbs(run, shown, info);
+    }, 30000);
   }
 
   private libError(info: HTMLElement, e: LibError, retry = () => void this.libraryPanel()): void {
