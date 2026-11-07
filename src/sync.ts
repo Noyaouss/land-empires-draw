@@ -1,7 +1,8 @@
 // Sends waiting pictures to the art repo. Runs on start, after each Save and when the tablet comes back online.
 import { isCategories } from "./categories";
-import { fetchCategories, putFile } from "./github";
-import { picturePath } from "./picture";
+import { fetchCategories, getFile, putFile } from "./github";
+import { isLibIndex, itemPath, type LibIndex } from "./library";
+import { type Picture, picturePath } from "./picture";
 import { encodePng } from "./png";
 import * as store from "./store";
 
@@ -10,6 +11,7 @@ export type QueueResult = { sent: number; waiting: number; keyBad: boolean };
 export async function runQueue(key: string): Promise<QueueResult> {
   let sent = 0;
   let keyBad = false;
+  const done: Picture[] = [];
   for (const id of await store.listQueue()) {
     const p = await store.getPicture(id);
     if (!p) {
@@ -32,7 +34,9 @@ export async function runQueue(key: string): Promise<QueueResult> {
     if (!(await store.markSent(id, p.updated))) continue;
     await store.dequeue(id);
     sent++;
+    if (!p.sheet) done.push(p);
   }
+  if (done.length) await addToLibrary(key, done);
   return { sent, waiting: (await store.listQueue()).length, keyBad };
 }
 
@@ -71,4 +75,24 @@ export class Syncer {
   idle(): Promise<void> {
     return this.running ?? Promise.resolve();
   }
+}
+
+// Sent pictures that the game library does not list yet (or lists with another size) go into items/library.json.
+async function addToLibrary(key: string, pics: Picture[]): Promise<void> {
+  try {
+    const r = await getFile(key, "items/library.json");
+    if (!(r instanceof Uint8Array)) return;
+    const index = JSON.parse(new TextDecoder().decode(r)) as LibIndex;
+    if (!isLibIndex(index)) return;
+    let changed = false;
+    for (const p of pics) {
+      const file = picturePath(p).replace(/^items\/[^/]+\//, "").replace(/\.png$/, "");
+      const e = index.items.find((i) => itemPath(i) === picturePath(p));
+      if (!e) index.items.push({ category: p.category, file, group: file, label: file, w: p.w, h: p.h });
+      else if (e.w !== p.w || e.h !== p.h) Object.assign(e, { w: p.w, h: p.h });
+      else continue;
+      changed = true;
+    }
+    if (changed) await putFile(key, "items/library.json", new TextEncoder().encode(JSON.stringify(index, null, 1) + "\n"), "art: library index");
+  } catch { /* the pictures are safe; the list updates on the next save */ }
 }

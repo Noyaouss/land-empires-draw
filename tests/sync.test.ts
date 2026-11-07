@@ -34,7 +34,7 @@ describe("runQueue", () => {
     const a = await queued("Big Oak");
     const urls = server([201]);
     expect(await runQueue(KEY)).toEqual({ sent: 1, waiting: 0, keyBad: false });
-    expect(urls.at(-1)).toBe("https://api.github.com/repos/Noyaouss/land-empires-art/contents/items/trees/big-oak.png");
+    expect(urls).toContain("https://api.github.com/repos/Noyaouss/land-empires-art/contents/items/trees/big-oak.png");
     expect((await store.getPicture(a.id))!.sent).toBe(true);
     expect(await store.listQueue()).toEqual([]);
   });
