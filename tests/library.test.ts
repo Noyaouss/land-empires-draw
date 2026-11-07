@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getFile } from "../src/github";
-import { findLocal, groupItems, isLibIndex, type LibItem, toPicture } from "../src/library";
+import { findLocal, groupItems, isLibIndex, isStale, type LibItem, toPicture } from "../src/library";
 import { newPicture } from "../src/picture";
 import { decodePng, encodePng } from "../src/png";
 
@@ -22,6 +22,18 @@ describe("decodePng", () => {
   });
   it("rejects junk", async () => {
     await expect(decodePng(new Uint8Array(40))).rejects.toThrow();
+  });
+});
+
+describe("thumb staleness", () => {
+  it("is stale when the repo sha differs or the cache has none", () => {
+    expect(isStale("old", "new")).toBe(true);
+    expect(isStale(undefined, "new")).toBe(true);
+  });
+  it("is fresh when the shas match or the repo sha is unknown", () => {
+    expect(isStale("same", "same")).toBe(false);
+    expect(isStale("old", undefined)).toBe(false);
+    expect(isStale(undefined, undefined)).toBe(false);
   });
 });
 

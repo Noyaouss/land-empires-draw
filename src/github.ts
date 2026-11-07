@@ -42,6 +42,19 @@ export async function fetchCategories(key: string): Promise<unknown | "auth" | "
   }
 }
 
+// One call for the whole tree: path -> git blob sha of every item picture. Null on any failure.
+export async function fetchShas(key: string): Promise<Map<string, string> | null> {
+  try {
+    const r = await fetch(`${API}/repos/${REPO}/git/trees/main?recursive=1`, { headers: headers(key) });
+    if (!r.ok) return null;
+    const { tree, truncated } = (await r.json()) as { tree?: { path: string; type: string; sha: string }[]; truncated?: boolean };
+    if (truncated || !Array.isArray(tree)) return null;
+    return new Map(tree.filter((e) => e.type === "blob" && e.path.startsWith("items/")).map((e) => [e.path, e.sha]));
+  } catch {
+    return null;
+  }
+}
+
 export type GetResult = Uint8Array | "auth" | "limit" | "offline" | "missing" | "retry";
 
 // Downloads one file from the art repo (contents API, base64).

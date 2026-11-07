@@ -2,9 +2,10 @@
 import { type Categories, withSheet } from "../categories";
 import { hexToHsv, hexToPx, pxToHex } from "../colour";
 import { GAME_COLOURS } from "../gameColours";
+import { fetchShas } from "../github";
 import { History } from "../history";
 import { fill, line, newPicture, pick, type Picture, picturePath } from "../picture";
-import { cachedThumb, countByCategory, ERROR_TEXT, fetchThumb, findLocal, groupItems, itemOf, type LibError, type LibIndex, type LibItem, LIB_CATEGORIES, loadIndex, toPicture, type Thumb } from "../library";
+import { cachedThumb, countByCategory, ERROR_TEXT, fetchThumb, findLocal, groupItems, isStale, itemOf, itemPath, type LibError, type LibIndex, type LibItem, LIB_CATEGORIES, loadIndex, toPicture, type Thumb } from "../library";
 import * as store from "../store";
 import type { Style } from "../store";
 import { refreshCategories, runQueue, Syncer } from "../sync";
@@ -469,12 +470,17 @@ export class App {
 
   // Draws cached thumbnails at once, then downloads the missing ones, 6 at a time.
   private async loadThumbs(run: number, items: [LibItem, HTMLCanvasElement][], info: HTMLElement): Promise<void> {
-    const todo: [LibItem, HTMLCanvasElement][] = [];
+    const shasP = this.key ? fetchShas(this.key) : Promise.resolve(null);
+    const cached: [LibItem, HTMLCanvasElement, Thumb | undefined][] = [];
     for (const [i, c] of items) {
       const t = await cachedThumb(i);
       if (t) paint(c, t);
-      else todo.push([i, c]);
+      cached.push([i, c, t]);
     }
+    const shas = await shasP;
+    const todo = cached
+      .filter(([i, , t]) => !t || isStale(t.sha, shas?.get(itemPath(i))))
+      .map(([i, c]): [LibItem, HTMLCanvasElement] => [i, c]);
     if (!todo.length || run !== this.libRun) return;
     let done = 0;
     let failed: LibError | null = null;
@@ -482,7 +488,7 @@ export class App {
     const next = async (): Promise<void> => {
       while (todo.length && !failed && run === this.libRun && info.isConnected) {
         const [i, c] = todo.shift()!;
-        const t = await fetchThumb(this.key, i);
+        const t = await fetchThumb(this.key, i, shas?.get(itemPath(i)));
         if (typeof t === "string") failed = this.key ? t : "nokey";
         else paint(c, t);
         done++;
@@ -503,10 +509,11 @@ export class App {
       return this.hide();
     }
     let t: Thumb | undefined = await cachedThumb(i);
-    if (!t) {
+    const sha = this.key ? (await fetchShas(this.key))?.get(itemPath(i)) : undefined;
+    if (!t || isStale(t.sha, sha)) {
       if (!this.key) return this.toast(ERROR_TEXT.nokey);
       this.toast("Downloading...");
-      const r = await fetchThumb(this.key, i);
+      const r = await fetchThumb(this.key, i, sha);
       if (typeof r === "string") return this.toast(ERROR_TEXT[r]);
       t = r;
     }
@@ -521,7 +528,8 @@ export class App {
     const i = itemOf(this.libIndex, this.pic);
     if (!i || !confirm(`Throw away your changes to "${this.pic.name}" and go back to the game version?`)) return;
     if (!this.key) return this.toast(ERROR_TEXT.nokey);
-    const r = await fetchThumb(this.key, i);
+    const sha = (await fetchShas(this.key))?.get(itemPath(i));
+    const r = await fetchThumb(this.key, i, sha);
     if (typeof r === "string") return this.toast(ERROR_TEXT[r]);
     this.pic.w = r.w;
     this.pic.h = r.h;

@@ -6,7 +6,7 @@ import * as store from "./store";
 
 export type LibItem = { category: string; file: string; group: string; label: string; w: number; h: number };
 export type LibIndex = { scale?: string; items: LibItem[] };
-export type Thumb = { w: number; h: number; px: Uint32Array };
+export type Thumb = { w: number; h: number; px: Uint32Array; sha?: string };
 
 export const LIB_CATEGORIES = [["trees", "Trees"], ["bushes", "Bushes"], ["plants", "Plants"], ["rocks", "Rocks"], ["wood", "Wood"], ["people", "People"], ["animals", "Animals"], ["camp", "Camp"]] as const;
 
@@ -68,12 +68,15 @@ export async function loadIndex(key: string): Promise<{ index: LibIndex; cached:
 
 export const cachedThumb = (i: LibItem) => store.getSetting<Thumb>(`thumb:${itemPath(i)}`);
 
+// A cached thumb is stale when the repo file has a different sha (or the cache has none); unknown shas count as fresh.
+export const isStale = (cachedSha: string | undefined, sha: string | undefined): boolean => sha !== undefined && cachedSha !== sha;
+
 // Downloads and decodes one item; the decoded pixels are cached for the next visit.
-export async function fetchThumb(key: string, i: LibItem): Promise<Thumb | Exclude<GetResult, Uint8Array>> {
+export async function fetchThumb(key: string, i: LibItem, sha?: string): Promise<Thumb | Exclude<GetResult, Uint8Array>> {
   const r = await getFile(key, itemPath(i));
   if (!(r instanceof Uint8Array)) return r;
   try {
-    const t = await decodePng(r);
+    const t: Thumb = { ...(await decodePng(r)), sha };
     if (t.w > 256 || t.h > 256) return "retry";
     await store.setSetting(`thumb:${itemPath(i)}`, t);
     return t;
