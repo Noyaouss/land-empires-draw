@@ -8,7 +8,7 @@ export type LibItem = { category: string; file: string; group: string; label: st
 export type LibIndex = { scale?: string; items: LibItem[] };
 export type Thumb = { w: number; h: number; px: Uint32Array; sha?: string };
 
-export const LIB_CATEGORIES = [["trees", "Trees"], ["bushes", "Bushes"], ["plants", "Plants"], ["rocks", "Rocks"], ["wood", "Wood"], ["people", "People"], ["animals", "Animals"], ["camp", "Camp"]] as const;
+export const LIB_CATEGORIES = [["trees", "Trees"], ["bushes", "Bushes"], ["plants", "Plants"], ["rocks", "Rocks"], ["wood", "Wood"], ["people", "People"], ["animals", "Animals"], ["camp", "Camp"], ["textures", "Textures"]] as const;
 
 export function isLibIndex(v: unknown): v is LibIndex {
   const items = (v as LibIndex)?.items;
