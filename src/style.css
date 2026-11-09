@@ -25,6 +25,7 @@ button.wide { display: block; width: 100%; margin: 6px 0; }
 #panel { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: flex; align-items: center; justify-content: center; }
 #panel.hidden, #toast.hidden { display: none; }
 .box { background: var(--bar); border-radius: 12px; padding: 16px; width: min(560px, 94vw); max-height: 90dvh; overflow-y: auto; }
+.repeat-preview { display: block; width: 100%; height: auto; image-rendering: pixelated; background: repeating-conic-gradient(#ccc 0 25%, #eee 0 50%) 0 0 / 8px 8px; }
 .head { display: flex; align-items: center; justify-content: space-between; }
 .head h2 { margin: 0; }
 h3 { margin: 16px 0 6px; font-size: 15px; opacity: 0.85; }

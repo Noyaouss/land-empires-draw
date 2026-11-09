@@ -1,5 +1,5 @@
 // Everything the app keeps lives on the tablet, in IndexedDB.
-import { type Categories, isCategories, STARTER } from "./categories";
+import { type Categories, isCategories, STARTER, withTextures } from "./categories";
 import type { Group } from "./gameColours";
 import type { Picture } from "./picture";
 
@@ -103,7 +103,7 @@ export async function cacheCategories(c: Categories): Promise<void> {
 
 export async function getCategories(): Promise<Categories> {
   const c = await done((await os("kv")).get("categories"));
-  return isCategories(c) ? c : STARTER;
+  return withTextures(isCategories(c) ? c : STARTER);
 }
 
 // Asks Android not to clear the app's data when space runs low. A yes is kept; a no is asked again next start (Chrome may say yes once installed).

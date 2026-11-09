@@ -3,11 +3,23 @@ export type Size = { name: string; w: number; h: number; sheet?: boolean };
 export type Category = { id: string; name: string; sizes: Size[] };
 export type Categories = { categories: Category[] };
 
+export const TEXTURES: Category = {
+  id: "textures", name: "Textures",
+  sizes: ["Grass", "Sand", "Rock", "Snow", "Forest floor"].map(name => ({ name, w: 64, h: 64 })),
+};
+
+// Keep the drawing tools available even with an older cached or remote list.
+export function withTextures(c: Categories): Categories {
+  return c.categories.some(category => category.id === TEXTURES.id)
+    ? c : { categories: [...c.categories, TEXTURES] };
+}
+
 export const STARTER: Categories = {
   categories: [
     { id: "trees", name: "Trees", sizes: [{ name: "small", w: 32, h: 48 }, { name: "big", w: 48, h: 64 }] },
     { id: "rocks", name: "Rocks", sizes: [{ name: "small", w: 16, h: 16 }, { name: "big", w: 32, h: 32 }] },
     { id: "bushes", name: "Bushes", sizes: [{ name: "small", w: 16, h: 16 }, { name: "big", w: 32, h: 32 }] },
+    TEXTURES,
   ],
 };
 
@@ -19,6 +31,7 @@ export function isCategories(v: unknown): v is Categories {
 
 // Every category also offers a sheet: one big canvas for several items, kept apart by see-through gaps and cut apart later.
 export function withSheet(c: Category): Size[] {
+  if (c.id === TEXTURES.id) return c.sizes;
   const w = Math.min(128, 2 * Math.max(...c.sizes.map((s) => s.w), 16));
   const h = Math.min(128, 2 * Math.max(...c.sizes.map((s) => s.h), 16));
   return [...c.sizes, { name: "sheet", w, h, sheet: true }];

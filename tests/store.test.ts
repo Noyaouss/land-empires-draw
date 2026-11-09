@@ -40,11 +40,12 @@ describe("store", () => {
     expect(await store.getSetting("penOnly")).toBe(true);
     await store.cacheCategories({ categories: [{ id: "x", name: "X", sizes: [] }] });
     expect((await store.getCategories()).categories[0].id).toBe("x");
+    expect((await store.getCategories()).categories.map(c => c.id)).toEqual(["x", "textures"]);
   });
 
   it("falls back to the starter categories when none are cached", async () => {
     const c = await store.getCategories();
-    expect(c.categories.map((x) => x.id)).toEqual(["trees", "rocks", "bushes"]);
+    expect(c.categories.map((x) => x.id)).toEqual(["trees", "rocks", "bushes", "textures"]);
   });
 
   it("asks for persistent storage once", async () => {

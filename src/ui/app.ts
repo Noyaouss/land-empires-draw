@@ -11,6 +11,7 @@ import type { Style } from "../store";
 import { refreshCategories, runQueue, Syncer } from "../sync";
 import { type PenState, penOnlyDecision, pointerRole, type Role } from "./input";
 import { View } from "./view";
+import { repeatPreview } from "../textures";
 import { Wheel } from "./wheel";
 
 type Tool = "pen" | "eraser" | "fill" | "picker";
@@ -83,6 +84,7 @@ export class App {
   private open(p: Picture): void {
     this.pic = p;
     this.view.pic = p;
+    if (p.category === "textures") this.view.showShadow = false;
     this.history = new History();
     void store.setSetting("open", p.id);
     this.view.fit();
@@ -281,7 +283,12 @@ export class App {
     this.top.replaceChildren(
       tool("pen", "✏️ Pen"), tool("eraser", "🧽 Eraser"), tool("fill", "🪣 Fill"), tool("picker", "💧 Pick"),
       btn("↶", () => this.undoRedo(false)), btn("↷", () => this.undoRedo(true)),
-      shadow, el("span", { class: "sun", title: "Light comes from the upper left; shadows fall to the lower right" }, "☀ ↖"),
+      ...(this.pic.category === "textures" ? [btn("Repeat preview", () => {
+        const preview = thumb(repeatPreview(this.pic));
+        preview.classList.add("repeat-preview");
+        preview.setAttribute("aria-label", "Texture repeated three times across and down");
+        this.show("Repeat preview", el("p", {}, "Your tile repeated 3 × 3. Look for lines where the edges meet. Close to keep drawing; Save keeps only the single tile."), preview);
+      })] : [shadow, el("span", { class: "sun", title: "Light comes from the upper left; shadows fall to the lower right" }, "☀ ↖")]),
       el("span", { class: "name" }, `${this.pic.name} · ${this.pic.w}×${this.pic.h}`),
       el("span", { class: this.keyBad ? "status bad" : "status" }, status),
       ...(itemOf(this.libIndex, this.pic) ? [btn("Revert to game version", () => void this.revert())] : []),
@@ -365,7 +372,8 @@ export class App {
     if (!cat) return this.homePanel();
     const sizes = withSheet(cat);
     let size = sizes[0];
-    const name = el("input", { type: "text", placeholder: "Name, for example Big oak" }) as HTMLInputElement;
+    const texture = cat.id === "textures";
+    const name = el("input", { type: "text", placeholder: texture ? "Name, for example Soft grass" : "Name, for example Big oak" }) as HTMLInputElement;
     const choices = el("div", { class: "choices" });
     const drawSizes = () => choices.replaceChildren(...sizes.map((z) => {
       const b = el("button", { class: z === size ? "on" : "" }, z.sheet ? `Sheet ${z.w}×${z.h} (several items)` : `${z.name} ${z.w}×${z.h}`);
@@ -378,7 +386,7 @@ export class App {
     drawSizes();
     const create = el("button", { class: "save wide" }, "Create");
     create.onclick = async () => {
-      const n = name.value.trim() || "untitled";
+      const n = name.value.trim() || (texture ? size.name : "untitled");
       const p = { ...newPicture(cat.id, n, size.w, size.h), sheet: !!size.sheet };
       const same = (await store.listPictures()).find((q) => picturePath(q) === picturePath(p));
       if (same && !confirm(`A picture called "${same.name}" already exists here. Replace it with a new blank one?`)) return;
